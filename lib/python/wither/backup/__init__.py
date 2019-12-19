@@ -12,7 +12,6 @@ from datetime import datetime
 
 import json
 
-
 ## {{{ parse_json_file(path)
 def parse_json_file(path):
   with open(path, 'r') as fp:
