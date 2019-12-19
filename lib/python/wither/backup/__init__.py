@@ -12,11 +12,7 @@ from datetime import datetime
 
 import json
 
-## {{{ parse_json_file(path)
-def parse_json_file(path):
-  with open(path, 'r') as fp:
-    return json.loads(fp.read())
-## }}}
+from wither.util import parse_json_file
 
 ## {{{ parse_spec_file(path)
 def parse_spec_file(path):
