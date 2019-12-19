@@ -1,0 +1,139 @@
+#!/bin/bash
+
+# Script filename
+SCRIPT_NAME="$(basename "$0")"
+
+# Log file
+LOG_FILE=/var/log/infra/backup/btrfs-backup.log
+
+#echo "BACKUP_TYPE: $BACKUP_TYPE"
+#echo "BACKUP_IDENTIFIER: $BACKUP_IDENTIFIER"
+#echo "BACKUP_PATH: $BACKUP_PATH"
+
+## {{{ usage()
+function usage()
+{
+  echo >&2 "Usage: $SCRIPT_NAME <command>"
+  echo >&2
+  echo >&2 "Commands:"
+  echo >&2
+  echo >&2 "  sync-to-local    Synchronise directory to be backed up with"
+  echo >&2 "                   scratch dir under /backup/local/"
+  echo >&2
+  echo >&2 "  snapshot-create  Create btrfs snapshot rooted under"
+  echo >&2 "                   /backup/local/snapshots/"
+  echo >&2
+
+  exit 1
+}
+## }}}
+
+## log()
+function log()
+{
+  echo "$@" |tee -a "$LOG_FILE"
+}
+## }}}
+
+## {{{ die()
+function die()
+{
+  echo >&2 "$SCRIPT_NAME: error:" "$@"
+  log "error:" "$@" 
+
+  exit 1
+}
+## }}}
+
+## {{{ do_sync()
+function do_sync()
+{
+  cd "$BACKUP_PATH" || die "$BACKUP_TYPE: cd(1) failed"
+
+  parent_dir="/backup/local/$BACKUP_TYPE"
+  dest_dir="$parent_dir/$BACKUP_IDENTIFIER"
+
+  local vol=
+  for vol in "$parent_dir" "$dest_dir"
+  do
+    if [[ ! -d $parent_dir ]]
+    then
+      log "Creating subvolume $parent_dir"
+
+      local out="$(btrfs subvolume create "$parent_dir" 2>&2)"
+      local st=$?
+
+      if [[ $st -ne 0 ]]
+      then
+        log "$out"
+        die "$parent_dir: btrfs(8) subvolume create exited with non-zero status $st"
+      fi
+    fi
+  done
+
+  rsync -av --delete-after . "$dest_dir/"
+
+  return 0
+}
+## }}}
+
+## {{{ do_snap_create()
+function do_snap_create()
+{
+  local snap_src_dir="/backup/local/$BACKUP_TYPE/$BACKUP_IDENTIFIER"
+  local snap_root_dir="/backup/local/snapshots"
+  local snap_top_dir="$snap_root_dir/$BACKUP_TYPE/$BACKUP_IDENTIFIER"
+
+  if [[ ! -d $snap_root_dir ]]
+  then
+    log "Creating subvolume $snap_root_dir"
+
+    local out="$(btrfs subvolume create "$snap_root_dir" 2>&1)"
+    local st=$?
+
+    if [[ $st -ne 0 ]]
+    then
+      log "$out"
+      die "$snap_root_dir: btrfs(8) subvolume create exited with non-zero status $st"
+    fi
+  fi
+
+  if [[ ! -d $snap_top_dir ]]
+  then
+    log "Creating directory $snap_top_dir"
+    mkdir -p "$snap_top_dir" || die "$snap_top_dir: mkdir(1) failed"
+  fi
+
+  local snap_ts="$(date +%Y-%m-%d-%H:%M)"
+  local snap_dir="$snap_top_dir/$snap_ts"
+  local out="$(btrfs subvolume snapshot -r "$snap_src_dir" "$snap_dir" 2>&1)"
+  local st=$?
+
+  if [[ $st -ne 0 ]]
+  then
+    log "$out"
+    die "$snap_root_dir: btrfs(8) subvolume create exited with non-zero status $st"
+  fi
+}
+## }}}
+
+if [[ $# -ne 1 ]]
+then
+  usage
+fi
+
+case "$1" in
+  sync-to-local)
+    do_sync
+    exit $?
+    ;;
+  snapshot-create)
+    do_snap_create
+    exit $?
+    ;;
+  *)
+    echo >&2 "$SCRIPT_NAME: error: invalid command '$1'"
+    exit 1
+esac
+
+exit 0
